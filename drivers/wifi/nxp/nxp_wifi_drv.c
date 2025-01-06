@@ -212,6 +212,7 @@ int nxp_wifi_wlan_event_callback(enum wlan_event_reason reason, void *data)
 			auth_fail = 0;
 		}
 		net_if_dormant_on(g_mlan.netif);
+		wifi_mgmt_raise_connect_result_event(g_mlan.netif, WIFI_STATUS_CONN_WRONG_PASSWORD);
 		break;
 	case WLAN_REASON_ADDRESS_SUCCESS:
 		LOG_DBG("wlan_network mgr: DHCP new lease");
