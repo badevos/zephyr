@@ -28,6 +28,11 @@ zephyr_library_sources_ifdef(
 )
 
 zephyr_library_sources_ifdef(
+    CONFIG_USBD_PRINTER_CLASS
+    class/printer.c
+)
+
+zephyr_library_sources_ifdef(
 	CONFIG_USBD_CDC_ACM_CLASS
 	class/usbd_cdc_acm.c
 )
