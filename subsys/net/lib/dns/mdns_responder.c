@@ -601,6 +601,37 @@ static int dns_read(int sock,
 	dns_msg.msg = dns_data->data;
 	dns_msg.msg_size = data_len;
 
+	{
+		/* HACK
+		 * If the dns request contains 2 queries:
+		 *	._http._tcp.local
+		 *	._pdl-datastream._tcp.local
+		 * The request will be modified with the 2 entries swapped.
+		 * this is checked by:
+		 * 1) the total size of the incoming request being
+		 * 2) the 5th byte being '2' (request containing 2 queries)
+		 * 3) the 14th byte being 'h'
+		 * 4) the 36th byte being 'p'
+		 */
+		if (dns_msg.msg_size == 66) {
+			if ( (dns_msg.msg[5]  == 2)
+			  && (dns_msg.msg[14] == (uint8_t)'h')
+			  && (dns_msg.msg[36] == (uint8_t)'p') ) {
+				NET_WARN("modified dns request");
+				static uint8_t hack_message[] = {
+					0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x5f, 0x70, 0x64,
+					0x6c, 0x2d, 0x64, 0x61, 0x74, 0x61, 0x73, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x04, 0x5f, 0x74, 0x63,
+					0x70, 0x06, 0x6c, 0x6f, 0x63, 0x61, 0x6c, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x01, 0x05, 0x5f, 0x68,
+					0x74, 0x74, 0x70, 0x04, 0x5f, 0x74, 0x63, 0x70, 0x06, 0x6c, 0x6f, 0x63, 0x61, 0x6c, 0x00, 0x00,
+					0x00, 0x0c, 0x00, 0x01
+				};
+				static uint16_t hack_size = sizeof(hack_message);
+				dns_msg.msg	  = hack_message;
+				dns_msg.msg_size = hack_size;
+			  }
+		}
+	}
+
 	ret = mdns_unpack_query_header(&dns_msg, NULL);
 	if (ret < 0) {
 		goto quit;
