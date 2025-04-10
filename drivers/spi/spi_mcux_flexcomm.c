@@ -29,6 +29,8 @@ LOG_MODULE_REGISTER(spi_mcux_flexcomm, CONFIG_SPI_LOG_LEVEL);
 #define SPI_CHIP_SELECT_COUNT	4
 #define SPI_MAX_DATA_WIDTH	16
 
+#define DMA_NO_WAIT
+
 struct spi_mcux_config {
 	SPI_Type *base;
 	const struct device *clock_dev;
@@ -74,6 +76,8 @@ struct spi_mcux_data {
 	uint32_t last_word;
 #endif
 };
+
+static int wait_dma_rx_tx_done(const struct device *dev);
 
 static void spi_mcux_transfer_next_packet(const struct device *dev)
 {
@@ -341,6 +345,31 @@ static void spi_mcux_dma_callback(const struct device *dev, void *arg,
 	}
 
 	spi_context_complete(&data->ctx, spi_dev, 0);
+
+#ifdef DMA_NO_WAIT
+	const struct spi_mcux_config *config = spi_dev->config;
+	SPI_Type *base = config->base;
+
+	int ret = wait_dma_rx_tx_done(spi_dev);
+	if (ret != 0) {
+		LOG_ERR("wait_dma_rx_tx_done failed (%d)", ret);
+	}
+
+	/* wait until TX FIFO is really empty */
+	while (0U == (base->FIFOSTAT & SPI_FIFOSTAT_TXEMPTY_MASK))
+	{
+	}
+
+	spi_context_update_tx(&data->ctx, 1, data->ctx.tx_len);
+	spi_context_update_rx(&data->ctx, 1, data->ctx.rx_len);
+
+	base->FIFOCFG &= ~SPI_FIFOCFG_DMATX_MASK;
+	base->FIFOCFG &= ~SPI_FIFOCFG_DMARX_MASK;
+
+	spi_context_cs_control(&data->ctx, false);
+
+    spi_context_release(&data->ctx, ret);
+#endif // DMA_NO_WAIT
 }
 
 
@@ -666,7 +695,10 @@ static int transceive_dma(const struct device *dev,
 	data->dma_tx.dma_cfg.source_data_size = data_size;
 	data->dma_tx.dma_cfg.dest_data_size = data_size;
 
-	while (data->ctx.rx_len > 0 || data->ctx.tx_len > 0) {
+#ifndef DMA_NO_WAIT
+	while (data->ctx.rx_len > 0 || data->ctx.tx_len > 0)
+#endif
+	{
 		size_t dma_len;
 
 		/* last is used to deassert chip select if this
@@ -721,6 +753,8 @@ static int transceive_dma(const struct device *dev,
 		gpio_pin_set_dt(&gpio_toggle_5, 1);
 		ret = spi_mcux_dma_move_buffers(dev, dma_len, spi_cfg, last);
 		gpio_pin_set_dt(&gpio_toggle_5, 0);
+
+#ifndef DMA_NO_WAIT
 		if (ret != 0) {
 			break;
 		}
@@ -736,15 +770,20 @@ static int transceive_dma(const struct device *dev,
 
 		spi_context_update_tx(&data->ctx, 1, dma_len);
 		spi_context_update_rx(&data->ctx, 1, dma_len);
+#endif
 	}
 
+#ifndef DMA_NO_WAIT
 	base->FIFOCFG &= ~SPI_FIFOCFG_DMATX_MASK;
 	base->FIFOCFG &= ~SPI_FIFOCFG_DMARX_MASK;
 
 	spi_context_cs_control(&data->ctx, false);
+#endif
 
 out:
+#ifndef DMA_NO_WAIT
 	spi_context_release(&data->ctx, ret);
+#endif
 
 	return ret;
 }
