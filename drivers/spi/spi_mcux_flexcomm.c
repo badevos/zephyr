@@ -8,6 +8,7 @@
 #define DT_DRV_COMPAT nxp_lpc_spi
 
 #include <errno.h>
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/spi/rtio.h>
 #include <zephyr/drivers/clock_control.h>
@@ -136,24 +137,36 @@ static void spi_mcux_transfer_next_packet(const struct device *dev)
 	}
 }
 
+// /*-- Global data --*/
+extern const struct gpio_dt_spec gpio_toggle_3;
+extern const struct gpio_dt_spec gpio_toggle_4;
+
 static void spi_mcux_isr(const struct device *dev)
 {
+	gpio_pin_set_dt(&gpio_toggle_3, 1);
+
 	const struct spi_mcux_config *config = dev->config;
 	struct spi_mcux_data *data = dev->data;
 	SPI_Type *base = config->base;
 
 	SPI_MasterTransferHandleIRQ(base, &data->handle);
+
+	gpio_pin_set_dt(&gpio_toggle_3, 0);
 }
 
 static void spi_mcux_transfer_callback(SPI_Type *base,
 		spi_master_handle_t *handle, status_t status, void *userData)
 {
+	gpio_pin_set_dt(&gpio_toggle_4, 1);
+
 	struct spi_mcux_data *data = userData;
 
 	spi_context_update_tx(&data->ctx, 1, data->transfer_len);
 	spi_context_update_rx(&data->ctx, 1, data->transfer_len);
 
 	spi_mcux_transfer_next_packet(data->dev);
+
+	gpio_pin_set_dt(&gpio_toggle_4, 0);
 }
 
 static uint8_t spi_clock_cycles(uint32_t delay_ns, uint32_t sck_frequency_hz)
@@ -381,6 +394,9 @@ static void spi_mcux_prepare_txdummy(uint32_t *dummy, bool last_packet,
 	*dummy |= SPI_FIFOWR_LEN(word_size - 1);
 }
 
+// /*-- Global data --*/
+// extern const struct gpio_dt_spec gpio_toggle_6;
+
 static int spi_mcux_dma_tx_load(const struct device *dev, const uint8_t *buf,
 				const struct spi_config *spi_cfg, size_t len,
 				bool last_packet, bool rx_ignore)
@@ -401,6 +417,8 @@ static int spi_mcux_dma_tx_load(const struct device *dev, const uint8_t *buf,
 
 	/* prepare the block for this TX DMA channel */
 	memset(blk_cfg, 0, sizeof(struct dma_block_config));
+
+	//gpio_pin_toggle_dt(&gpio_toggle_6);
 
 	/* tx direction has memory as source and periph as dest. */
 	if (buf == NULL) {
@@ -441,6 +459,9 @@ static int spi_mcux_dma_tx_load(const struct device *dev, const uint8_t *buf,
 		if (last_packet) {
 			spi_mcux_prepare_txlastword(&data->last_word, buf, spi_cfg, len, rx_ignore);
 		}
+
+		//gpio_pin_toggle_dt(&gpio_toggle_6);
+
 		/* If last packet and data transfer frame is bigger then 1,
 		 * use dma descriptor to send the last data.
 		 */
@@ -470,6 +491,8 @@ static int spi_mcux_dma_tx_load(const struct device *dev, const uint8_t *buf,
 		}
 	}
 
+	//gpio_pin_toggle_dt(&gpio_toggle_6);
+
 	/* Enables the DMA request from SPI txFIFO */
 	base->FIFOCFG |= SPI_FIFOCFG_DMATX_MASK;
 
@@ -478,8 +501,11 @@ static int spi_mcux_dma_tx_load(const struct device *dev, const uint8_t *buf,
 	/* give the client dev as arg, as the callback comes from the dma */
 	stream->dma_cfg.user_data = (struct device *)dev;
 	/* pass our client origin to the dma: data->dma_tx.dma_channel */
+
+	//gpio_pin_toggle_dt(&gpio_toggle_6);
 	ret = dma_config(data->dma_tx.dma_dev, data->dma_tx.channel,
 			&stream->dma_cfg);
+	//gpio_pin_toggle_dt(&gpio_toggle_6);
 	/* the channel is the actual stream from 0 */
 	if (ret != 0) {
 		return ret;
@@ -488,6 +514,8 @@ static int spi_mcux_dma_tx_load(const struct device *dev, const uint8_t *buf,
 	uint32_t tmpData = 0U;
 
 	spi_mcux_prepare_txdummy(&tmpData, last_packet, spi_cfg, rx_ignore);
+
+	//gpio_pin_toggle_dt(&gpio_toggle_6);
 
 	/* Setup the control info.
 	 * Halfword writes to just the control bits (offset 0xE22) doesn't push
@@ -504,8 +532,14 @@ static int spi_mcux_dma_tx_load(const struct device *dev, const uint8_t *buf,
 		*((uint16_t *)((uint32_t)&base->FIFOWR) + 1) = (uint16_t)(tmpData >> 16U);
 	}
 
+	//gpio_pin_set_dt(&gpio_toggle_6, 1);
+	//gpio_pin_toggle_dt(&gpio_toggle_6);
 	/* gives the request ID */
-	return dma_start(data->dma_tx.dma_dev, data->dma_tx.channel);
+	ret = dma_start(data->dma_tx.dma_dev, data->dma_tx.channel);
+	//gpio_pin_toggle_dt(&gpio_toggle_6);
+	//gpio_pin_set_dt(&gpio_toggle_6, 0);
+
+	return ret;
 }
 
 static int spi_mcux_dma_rx_load(const struct device *dev, uint8_t *buf,
@@ -554,6 +588,9 @@ static int spi_mcux_dma_rx_load(const struct device *dev, uint8_t *buf,
 	return dma_start(data->dma_rx.dma_dev, data->dma_rx.channel);
 }
 
+// /*-- Global data --*/
+// extern const struct gpio_dt_spec gpio_toggle_5;
+
 static int spi_mcux_dma_move_buffers(const struct device *dev, size_t len,
 			const struct spi_config *spi_cfg, bool last_packet)
 {
@@ -567,8 +604,9 @@ static int spi_mcux_dma_move_buffers(const struct device *dev, size_t len,
 		return ret;
 	}
 
-	ret = spi_mcux_dma_tx_load(dev, data->ctx.tx_buf, spi_cfg,
-				   len, last_packet, rx_ignore);
+	//gpio_pin_set_dt(&gpio_toggle_5, 1);
+	ret = spi_mcux_dma_tx_load(dev, data->ctx.tx_buf, spi_cfg, len, last_packet, rx_ignore);
+	//gpio_pin_set_dt(&gpio_toggle_5, 0);
 
 	return ret;
 }
@@ -590,6 +628,9 @@ static int wait_dma_rx_tx_done(const struct device *dev)
 		}
 	}
 }
+
+/*-- Global data --*/
+extern const struct gpio_dt_spec gpio_toggle_5;
 
 static int transceive_dma(const struct device *dev,
 		      const struct spi_config *spi_cfg,
@@ -677,7 +718,9 @@ static int transceive_dma(const struct device *dev,
 
 		data->status_flags = 0;
 
+		gpio_pin_set_dt(&gpio_toggle_5, 1);
 		ret = spi_mcux_dma_move_buffers(dev, dma_len, spi_cfg, last);
+		gpio_pin_set_dt(&gpio_toggle_5, 0);
 		if (ret != 0) {
 			break;
 		}
@@ -751,6 +794,9 @@ static int spi_mcux_transceive(const struct device *dev,
 }
 
 #ifdef CONFIG_SPI_ASYNC
+// /*-- Global data --*/
+// extern const struct gpio_dt_spec gpio_toggle_5;
+
 static int spi_mcux_transceive_async(const struct device *dev,
 				     const struct spi_config *spi_cfg,
 				     const struct spi_buf_set *tx_bufs,
@@ -759,7 +805,11 @@ static int spi_mcux_transceive_async(const struct device *dev,
 				     void *userdata)
 {
 #ifdef CONFIG_SPI_MCUX_FLEXCOMM_DMA
-	return transceive_dma(dev, spi_cfg, tx_bufs, rx_bufs, true, cb, userdata);
+	//gpio_pin_set_dt(&gpio_toggle_5, 1);
+	int ret = transceive_dma(dev, spi_cfg, tx_bufs, rx_bufs, true, cb, userdata);
+	//gpio_pin_set_dt(&gpio_toggle_5, 0);
+
+	return ret;
 #endif
 
 	return transceive(dev, spi_cfg, tx_bufs, rx_bufs, true, cb, userdata);
