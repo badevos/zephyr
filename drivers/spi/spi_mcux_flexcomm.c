@@ -78,6 +78,7 @@ struct spi_mcux_data {
 };
 
 static int wait_dma_rx_tx_done(const struct device *dev);
+void cleanup_dma_context(const struct device *spi_dev, int status);
 
 static void spi_mcux_transfer_next_packet(const struct device *dev)
 {
@@ -344,32 +345,11 @@ static void spi_mcux_dma_callback(const struct device *dev, void *arg,
 		}
 	}
 
-	spi_context_complete(&data->ctx, spi_dev, 0);
-
 #ifdef DMA_NO_WAIT
-	const struct spi_mcux_config *config = spi_dev->config;
-	SPI_Type *base = config->base;
-
-	int ret = wait_dma_rx_tx_done(spi_dev);
-	if (ret != 0) {
-		LOG_ERR("wait_dma_rx_tx_done failed (%d)", ret);
-	}
-
-	/* wait until TX FIFO is really empty */
-	while (0U == (base->FIFOSTAT & SPI_FIFOSTAT_TXEMPTY_MASK))
-	{
-	}
-
-	spi_context_update_tx(&data->ctx, 1, data->ctx.tx_len);
-	spi_context_update_rx(&data->ctx, 1, data->ctx.rx_len);
-
-	base->FIFOCFG &= ~SPI_FIFOCFG_DMATX_MASK;
-	base->FIFOCFG &= ~SPI_FIFOCFG_DMARX_MASK;
-
-	spi_context_cs_control(&data->ctx, false);
-
-    spi_context_release(&data->ctx, ret);
+	cleanup_dma_context(spi_dev, 0);
 #endif // DMA_NO_WAIT
+
+	spi_context_complete(&data->ctx, spi_dev, 0);
 }
 
 
@@ -669,9 +649,11 @@ static int transceive_dma(const struct device *dev,
 		      spi_callback_t cb,
 		      void *userdata)
 {
+#ifndef DMA_NO_WAIT
 	const struct spi_mcux_config *config = dev->config;
-	struct spi_mcux_data *data = dev->data;
 	SPI_Type *base = config->base;
+#endif
+	struct spi_mcux_data *data = dev->data;
 	int ret;
 	uint32_t word_size;
 	uint16_t data_size;
@@ -754,7 +736,11 @@ static int transceive_dma(const struct device *dev,
 		ret = spi_mcux_dma_move_buffers(dev, dma_len, spi_cfg, last);
 		gpio_pin_set_dt(&gpio_toggle_5, 0);
 
-#ifndef DMA_NO_WAIT
+#ifdef DMA_NO_WAIT
+		if (ret != 0) {
+			cleanup_dma_context(dev, ret);
+		}
+#else
 		if (ret != 0) {
 			break;
 		}
@@ -854,6 +840,38 @@ static int spi_mcux_transceive_async(const struct device *dev,
 	return transceive(dev, spi_cfg, tx_bufs, rx_bufs, true, cb, userdata);
 }
 #endif /* CONFIG_SPI_ASYNC */
+
+void cleanup_dma_context(const struct device *spi_dev, int status)
+{
+	const struct spi_mcux_config *config = spi_dev->config;
+	struct spi_mcux_data *data = spi_dev->data;
+	SPI_Type *base = config->base;
+
+	if (status != 0)
+	{
+		status = wait_dma_rx_tx_done(spi_dev);
+		if (status != 0) {
+			LOG_ERR("wait_dma_rx_tx_done failed (%d)", status);
+		}
+		else
+		{
+			/* wait until TX FIFO is really empty */
+			while (0U == (base->FIFOSTAT & SPI_FIFOSTAT_TXEMPTY_MASK))
+			{
+			}
+
+			spi_context_update_tx(&data->ctx, 1, data->ctx.tx_len);
+			spi_context_update_rx(&data->ctx, 1, data->ctx.rx_len);
+		}
+	}
+
+	base->FIFOCFG &= ~SPI_FIFOCFG_DMATX_MASK;
+	base->FIFOCFG &= ~SPI_FIFOCFG_DMARX_MASK;
+
+	spi_context_cs_control(&data->ctx, false);
+
+	spi_context_release(&data->ctx, status);
+}
 
 static int spi_mcux_release(const struct device *dev,
 			    const struct spi_config *spi_cfg)
