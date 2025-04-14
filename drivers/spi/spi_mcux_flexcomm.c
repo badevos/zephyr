@@ -849,6 +849,10 @@ void cleanup_dma_context(const struct device *spi_dev, int status)
 
 	if (status != 0)
 	{
+		LOG_ERR("spi_mcux_dma_move_buffers failed (%d)", status);
+	}
+	else
+	{
 		status = wait_dma_rx_tx_done(spi_dev);
 		if (status != 0) {
 			LOG_ERR("wait_dma_rx_tx_done failed (%d)", status);
