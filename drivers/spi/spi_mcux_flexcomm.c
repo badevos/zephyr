@@ -143,12 +143,12 @@ static void spi_mcux_transfer_next_packet(const struct device *dev)
 }
 
 // /*-- Global data --*/
-extern const struct gpio_dt_spec gpio_toggle_3;
-extern const struct gpio_dt_spec gpio_toggle_4;
+// extern const struct gpio_dt_spec gpio_toggle_3;
+// extern const struct gpio_dt_spec gpio_toggle_4;
 
 static void spi_mcux_isr(const struct device *dev)
 {
-	gpio_pin_set_dt(&gpio_toggle_3, 1);
+	//gpio_pin_set_dt(&gpio_toggle_3, 1);
 
 	const struct spi_mcux_config *config = dev->config;
 	struct spi_mcux_data *data = dev->data;
@@ -156,13 +156,13 @@ static void spi_mcux_isr(const struct device *dev)
 
 	SPI_MasterTransferHandleIRQ(base, &data->handle);
 
-	gpio_pin_set_dt(&gpio_toggle_3, 0);
+	//gpio_pin_set_dt(&gpio_toggle_3, 0);
 }
 
 static void spi_mcux_transfer_callback(SPI_Type *base,
 		spi_master_handle_t *handle, status_t status, void *userData)
 {
-	gpio_pin_set_dt(&gpio_toggle_4, 1);
+	//gpio_pin_set_dt(&gpio_toggle_4, 1);
 
 	struct spi_mcux_data *data = userData;
 
@@ -171,7 +171,7 @@ static void spi_mcux_transfer_callback(SPI_Type *base,
 
 	spi_mcux_transfer_next_packet(data->dev);
 
-	gpio_pin_set_dt(&gpio_toggle_4, 0);
+	//gpio_pin_set_dt(&gpio_toggle_4, 0);
 }
 
 static uint8_t spi_clock_cycles(uint32_t delay_ns, uint32_t sck_frequency_hz)
@@ -598,7 +598,7 @@ static int spi_mcux_dma_rx_load(const struct device *dev, uint8_t *buf,
 }
 
 // /*-- Global data --*/
-// extern const struct gpio_dt_spec gpio_toggle_5;
+extern const struct gpio_dt_spec gpio_toggle_6;
 
 static int spi_mcux_dma_move_buffers(const struct device *dev, size_t len,
 			const struct spi_config *spi_cfg, bool last_packet)
@@ -613,9 +613,9 @@ static int spi_mcux_dma_move_buffers(const struct device *dev, size_t len,
 		return ret;
 	}
 
-	//gpio_pin_set_dt(&gpio_toggle_5, 1);
+	gpio_pin_set_dt(&gpio_toggle_6, 1);
 	ret = spi_mcux_dma_tx_load(dev, data->ctx.tx_buf, spi_cfg, len, last_packet, rx_ignore);
-	//gpio_pin_set_dt(&gpio_toggle_5, 0);
+	gpio_pin_set_dt(&gpio_toggle_6, 0);
 
 	return ret;
 }
@@ -819,8 +819,8 @@ static int spi_mcux_transceive(const struct device *dev,
 }
 
 #ifdef CONFIG_SPI_ASYNC
-// /*-- Global data --*/
-// extern const struct gpio_dt_spec gpio_toggle_5;
+/*-- Global data --*/
+extern const struct gpio_dt_spec gpio_toggle_4;
 
 static int spi_mcux_transceive_async(const struct device *dev,
 				     const struct spi_config *spi_cfg,
@@ -830,9 +830,9 @@ static int spi_mcux_transceive_async(const struct device *dev,
 				     void *userdata)
 {
 #ifdef CONFIG_SPI_MCUX_FLEXCOMM_DMA
-	//gpio_pin_set_dt(&gpio_toggle_5, 1);
+	gpio_pin_set_dt(&gpio_toggle_4, 1);
 	int ret = transceive_dma(dev, spi_cfg, tx_bufs, rx_bufs, true, cb, userdata);
-	//gpio_pin_set_dt(&gpio_toggle_5, 0);
+	gpio_pin_set_dt(&gpio_toggle_4, 0);
 
 	return ret;
 #endif
