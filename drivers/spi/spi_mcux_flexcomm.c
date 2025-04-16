@@ -29,8 +29,6 @@ LOG_MODULE_REGISTER(spi_mcux_flexcomm, CONFIG_SPI_LOG_LEVEL);
 #define SPI_CHIP_SELECT_COUNT	4
 #define SPI_MAX_DATA_WIDTH	16
 
-#define DMA_NO_WAIT
-
 struct spi_mcux_config {
 	SPI_Type *base;
 	const struct device *clock_dev;
@@ -333,9 +331,9 @@ static void spi_mcux_dma_callback(const struct device *dev, void *arg,
 		}
 	}
 
-#ifdef DMA_NO_WAIT
+#ifdef CONFIG_DMA_NO_WAIT
 	cleanup_dma_context(spi_dev, 0);
-#endif // DMA_NO_WAIT
+#endif // CONFIG_DMA_NO_WAIT
 
 	spi_context_complete(&data->ctx, spi_dev, 0);
 }
@@ -612,11 +610,10 @@ static int transceive_dma(const struct device *dev,
 		      spi_callback_t cb,
 		      void *userdata)
 {
-#ifndef DMA_NO_WAIT
 	const struct spi_mcux_config *config = dev->config;
-	SPI_Type *base = config->base;
-#endif
 	struct spi_mcux_data *data = dev->data;
+	SPI_Type *base = config->base;
+
 	int ret;
 	uint32_t word_size;
 	uint16_t data_size;
@@ -640,10 +637,7 @@ static int transceive_dma(const struct device *dev,
 	data->dma_tx.dma_cfg.source_data_size = data_size;
 	data->dma_tx.dma_cfg.dest_data_size = data_size;
 
-#ifndef DMA_NO_WAIT
-	while (data->ctx.rx_len > 0 || data->ctx.tx_len > 0)
-#endif
-	{
+	while (data->ctx.rx_len > 0 || data->ctx.tx_len > 0) {
 		size_t dma_len;
 
 		/* last is used to deassert chip select if this
@@ -685,7 +679,7 @@ static int transceive_dma(const struct device *dev,
 			 * want to deassert CS.
 			 */
 			if ((data->ctx.tx_count > 1) ||
-			    (data->ctx.rx_count > 1)) {
+				(data->ctx.rx_count > 1)) {
 				/* more buffers to transfer so
 				 * this isn't last
 				 */
@@ -697,40 +691,51 @@ static int transceive_dma(const struct device *dev,
 
 		ret = spi_mcux_dma_move_buffers(dev, dma_len, spi_cfg, last);
 
-#ifdef DMA_NO_WAIT
-		if (ret != 0) {
-			cleanup_dma_context(dev, ret);
+#ifdef CONFIG_DMA_NO_WAIT
+		if (asynchronous) {
+			if (ret != 0) {
+				cleanup_dma_context(dev, ret);
+				break;
+			}
 		}
-#else
-		if (ret != 0) {
-			break;
-		}
+		else
+#endif // CONFIG_DMA_NO_WAIT
+		{
+			if (ret != 0) {
+				break;
+			}
 
-		ret = wait_dma_rx_tx_done(dev);
-		if (ret != 0) {
-			break;
-		}
+			ret = wait_dma_rx_tx_done(dev);
+			if (ret != 0) {
+				break;
+			}
 
-		/* wait until TX FIFO is really empty */
-		while (0U == (base->FIFOSTAT & SPI_FIFOSTAT_TXEMPTY_MASK)) {
+			/* wait until TX FIFO is really empty */
+			while (0U == (base->FIFOSTAT & SPI_FIFOSTAT_TXEMPTY_MASK)) {
+			}
 		}
 
 		spi_context_update_tx(&data->ctx, 1, dma_len);
 		spi_context_update_rx(&data->ctx, 1, dma_len);
-#endif
 	}
 
-#ifndef DMA_NO_WAIT
-	base->FIFOCFG &= ~SPI_FIFOCFG_DMATX_MASK;
-	base->FIFOCFG &= ~SPI_FIFOCFG_DMARX_MASK;
+#ifdef CONFIG_DMA_NO_WAIT
+	if (!asynchronous)
+#endif // CONFIG_DMA_NO_WAIT
+	{
+		base->FIFOCFG &= ~SPI_FIFOCFG_DMATX_MASK;
+		base->FIFOCFG &= ~SPI_FIFOCFG_DMARX_MASK;
 
-	spi_context_cs_control(&data->ctx, false);
-#endif
+		spi_context_cs_control(&data->ctx, false);
+	}
 
 out:
-#ifndef DMA_NO_WAIT
-	spi_context_release(&data->ctx, ret);
-#endif
+#ifdef CONFIG_DMA_NO_WAIT
+	if (!asynchronous)
+#endif // CONFIG_DMA_NO_WAIT
+	{
+		spi_context_release(&data->ctx, ret);
+	}
 
 	return ret;
 }
@@ -788,9 +793,7 @@ static int spi_mcux_transceive_async(const struct device *dev,
 				     void *userdata)
 {
 #ifdef CONFIG_SPI_MCUX_FLEXCOMM_DMA
-	int ret = transceive_dma(dev, spi_cfg, tx_bufs, rx_bufs, true, cb, userdata);
-
-	return ret;
+	return transceive_dma(dev, spi_cfg, tx_bufs, rx_bufs, true, cb, userdata);
 #endif
 
 	return transceive(dev, spi_cfg, tx_bufs, rx_bufs, true, cb, userdata);
@@ -803,25 +806,21 @@ void cleanup_dma_context(const struct device *spi_dev, int status)
 	struct spi_mcux_data *data = spi_dev->data;
 	SPI_Type *base = config->base;
 
-	if (status != 0)
-	{
+	if (status != 0) {
 		LOG_ERR("spi_mcux_dma_move_buffers failed (%d)", status);
 	}
-	else
-	{
+	else {
 		status = wait_dma_rx_tx_done(spi_dev);
 		if (status != 0) {
 			LOG_ERR("wait_dma_rx_tx_done failed (%d)", status);
 		}
-		else
-		{
+		else {
 			/* wait until TX FIFO is really empty */
-			while (0U == (base->FIFOSTAT & SPI_FIFOSTAT_TXEMPTY_MASK))
-			{
+			while (0U == (base->FIFOSTAT & SPI_FIFOSTAT_TXEMPTY_MASK)) {
 			}
 
-			spi_context_update_tx(&data->ctx, 1, data->ctx.tx_len);
-			spi_context_update_rx(&data->ctx, 1, data->ctx.rx_len);
+			//spi_context_update_tx(&data->ctx, 1, data->ctx.tx_len);
+			//spi_context_update_rx(&data->ctx, 1, data->ctx.rx_len);
 		}
 	}
 
