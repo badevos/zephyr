@@ -20,8 +20,6 @@
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/drivers/dma/dma_mcux_lpc.h>
 
-#include <zephyr/drivers/gpio.h>
-
 #define DT_DRV_COMPAT nxp_lpc_dma
 
 LOG_MODULE_REGISTER(dma_mcux_lpc, CONFIG_DMA_LOG_LEVEL);
@@ -729,13 +727,8 @@ static int dma_mcux_lpc_configure(const struct device *dev, uint32_t channel,
 	return 0;
 }
 
-// /*-- Global data --*/
-// extern const struct gpio_dt_spec gpio_toggle_3;
-
 static int dma_mcux_lpc_start(const struct device *dev, uint32_t channel)
 {
-	// gpio_pin_set_dt(&gpio_toggle_3, 1);
-
 	struct dma_mcux_lpc_dma_data *dev_data = dev->data;
 	int8_t virtual_channel = dev_data->channel_index[channel];
 	struct channel_data *data = DEV_CHANNEL_DATA(dev, virtual_channel);
@@ -744,9 +737,6 @@ static int dma_mcux_lpc_start(const struct device *dev, uint32_t channel)
 	LOG_DBG("DMA CTRL 0x%x", DEV_BASE(dev)->CTRL);
 	data->busy = true;
 	DMA_StartTransfer(DEV_DMA_HANDLE(dev, virtual_channel));
-
-	// gpio_pin_set_dt(&gpio_toggle_3, 0);
-
 	return 0;
 }
 

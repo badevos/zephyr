@@ -894,9 +894,6 @@ static inline int spi_write_dt(const struct spi_dt_spec *spec,
 
 #if defined(CONFIG_SPI_ASYNC) || defined(__DOXYGEN__)
 
-/*-- Global data --*/
-extern const struct gpio_dt_spec gpio_toggle_3;
-
 /**
  * @brief Read/write the specified amount of data from the SPI driver.
  *
@@ -930,13 +927,10 @@ static inline int spi_transceive_cb(const struct device *dev,
 				    spi_callback_t callback,
 				    void *userdata)
 {
-	const struct spi_driver_api *api = (const struct spi_driver_api *)dev->api;
+	const struct spi_driver_api *api =
+		(const struct spi_driver_api *)dev->api;
 
-	gpio_pin_set_dt(&gpio_toggle_3, 1);
-	int ret = api->transceive_async(dev, config, tx_bufs, rx_bufs, callback, userdata);
-	gpio_pin_set_dt(&gpio_toggle_3, 0);
-
-	return ret;
+	return api->transceive_async(dev, config, tx_bufs, rx_bufs, callback, userdata);
 }
 
 #if defined(CONFIG_POLL) || defined(__DOXYGEN__)
