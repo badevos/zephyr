@@ -431,7 +431,8 @@ int add_ptr_record(const struct dns_sd_rec *inst, uint32_t ttl,
 	/* copy the service name. e.g. "._foo._tcp.local." */
 	for (i = 1; i < ARRAY_SIZE(labels); ++i) {
 		/* Hardcoded for Airprint IPP */
-		if (i == 1 && strncmp(labels[i], "_universal._sub._ipp", 20) == 0) {
+		/* @note: do not replace by strncmp, exact match required */
+		if (i == 1 && strcmp(labels[i], "_universal._sub._ipp") == 0) {
 			/* This is absolutely not safe, since memory size is checked above but does not take into account these longer responses.
 			But in practice, since PTR is the first record, there should be sufficient memory. */
 			int bytes_written = sprintf(&buf[offset], "%c%s%c%s%c%s", 10, "_universal", 4, "_sub", 4, "_ipp");
@@ -442,7 +443,7 @@ int add_ptr_record(const struct dns_sd_rec *inst, uint32_t ttl,
 			svc_offs += 16;
 			*service_offset = svc_offs;
 		/* Hardcoded for Airprint: IPPS */
-		} else if (i == 1 && strncmp(labels[i], "_universal._sub._ipps", 21) == 0) {
+		} else if (i == 1 && strcmp(labels[i], "_universal._sub._ipps") == 0) {
 			int bytes_written = sprintf(&buf[offset], "%c%s%c%s%c%s", 10, "_universal", 4, "_sub", 5, "_ipps");
 			offset += bytes_written;
 			/* _universal._sub on the wire = \x0a_universal\x04_sub = 16 bytes;
@@ -817,7 +818,7 @@ int dns_sd_handle_ptr_query(const struct dns_sd_rec *inst, const struct in_addr 
 	rsp->ancount++;
 	offset += r;
 
-	if (strncmp(inst->service, "_universal._sub._ipp", 20) == 0) {
+	if (strcmp(inst->service, "_universal._sub._ipp") == 0) {
 		/* Airprint specific change:
 		 	If the service subtype is reported (PTR), the main service also needs to be reported in an additional PTR record.
 			This can be done by actually copying the first PTR record excluding the first "._universal._sub" (16 bytes on the wire).
@@ -827,7 +828,7 @@ int dns_sd_handle_ptr_query(const struct dns_sd_rec *inst, const struct in_addr 
 		offset += new_ptr_record_size;
 		rsp->ancount++;
 	}
-	if (strncmp(inst->service, "_universal._sub._ipps", 21) == 0) {
+	if (strcmp(inst->service, "_universal._sub._ipps") == 0) {
 		/* Airprint specific change:
 		 	If the service subtype is reported (PTR), the main service also needs to be reported in an additional PTR record.
 			This can be done by actually copying the first PTR record excluding the first "._universal._sub" prefix.
